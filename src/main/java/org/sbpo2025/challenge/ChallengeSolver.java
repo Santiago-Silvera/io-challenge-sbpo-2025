@@ -32,13 +32,27 @@ public class ChallengeSolver {
         // Implement your solution here
         PartialResult bestSolution = new PartialResult(null, 0);
         for (int k = 1; k < aisles.size(); k++) {
-            System.out.println("Minimizing for k: " + k);
+            System.out.println("Solving for k = " + k);
             PartialResult partialResult = problem1a(k);
+            if (partialResult == null) {
+                System.err.println("No solution found for k = " + k);
+                continue;
+            }
+            double delta = partialResult.objValue() - (double) waveSizeUB / k;
+            if (delta <= 0) {
+              delta = -delta;
+            }
+            System.out.println("Delta: " + delta);
+            if (delta <= 0.00000001) { // found upper bound
+                System.out.println("Stopping early due to optimal solution.");
+                break;
+            }
             if (partialResult.objValue() > bestSolution.objValue()) {
+                System.out.println("Found a better solution for k = " + k + " with objective value: " + partialResult.objValue());
                 bestSolution = partialResult;
             }
         }
-        System.out.println("Done iterating over k.");
+        System.out.println("Best solution found with objective value: " + bestSolution.objValue());
         return bestSolution.partialSolution();
     }
 
@@ -55,6 +69,7 @@ public class ChallengeSolver {
             System.out.println("Could not create solver SCIP");
             return null;
         }
+        // solver.setNumThreads(8);
 
         // Variables
         int nOrders = orders.size();
@@ -85,14 +100,14 @@ public class ChallengeSolver {
                 coeff += quantity;
             }
             MPVariable x = selected_orders.get(o);
-            objective.setCoefficient(x, (double) coeff / k);
+            objective.setCoefficient(x, coeff);
         }
         for (MPVariable y : selected_aisles) {
             objective.setCoefficient(y, 0);
         }
         objective.setMaximization();
 
-        return calculatePartialResult(solver, objective, nOrders, selected_orders, nAisles, selected_aisles);
+        return calculatePartialResult(solver, objective, nOrders, selected_orders, nAisles, selected_aisles, k);
     }
 
     protected List<MPVariable> getVariablesOrders(MPSolver solver, int nOrders) {
@@ -155,19 +170,16 @@ public class ChallengeSolver {
         }
     }
 
-    protected PartialResult calculatePartialResult(MPSolver solver, MPObjective objective, int nOrders, List<MPVariable> selected_orders, int nAisles, List<MPVariable> selected_aisles) {
+    protected PartialResult calculatePartialResult(MPSolver solver, MPObjective objective, int nOrders, List<MPVariable> selected_orders, int nAisles, List<MPVariable> selected_aisles, int k) {
         final MPSolver.ResultStatus resultStatus = solver.solve();
 
         Set<Integer> finalOrders = new HashSet<>();
         Set<Integer> finalAisles = new HashSet<>();
         if (resultStatus == MPSolver.ResultStatus.OPTIMAL) {
-            System.out.println("Solution:");
-            System.out.println("Objective value = " + objective.value());
 
             for (int i = 0; i < nOrders; i++) {
                 MPVariable x = selected_orders.get(i);
                 if (x.solutionValue() == 1) {
-                    System.out.println("x_" + i + ": " + x.solutionValue());
                     finalOrders.add(i);
                 }
             }
@@ -175,13 +187,12 @@ public class ChallengeSolver {
             for (int i = 0; i < nAisles; i++) {
                 MPVariable y = selected_aisles.get(i);
                 if (y.solutionValue() == 1) {
-                    System.out.println("y_" + i + ": " + y.solutionValue());
                     finalAisles.add(i);
                 }
             }
 
             ChallengeSolution partialSolution = new ChallengeSolution(finalOrders, finalAisles);
-            return new PartialResult(partialSolution, objective.value());
+            return new PartialResult(partialSolution, objective.value() / k);
         } else {
             return null;
         }
